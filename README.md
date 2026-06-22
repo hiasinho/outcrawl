@@ -25,14 +25,17 @@ being deleted automatically.
 
 ## Install
 
-From this checkout:
+Build the CLI from a checkout:
 
 ```bash
-cd ~/src/outcrawl
-go build -o ~/.local/bin/outcrawl ./cmd/outcrawl
+go build -o ./outcrawl ./cmd/outcrawl
 ```
 
-Make sure `~/.local/bin` is on your `PATH`.
+Or install it into any directory on your `PATH`:
+
+```bash
+go build -o ~/.local/bin/outcrawl ./cmd/outcrawl
+```
 
 ## Quick Start
 
