@@ -1,27 +1,57 @@
 # outcrawl
 
-`outcrawl` mirrors Outline wiki documents into a local SQLite archive and normalized Markdown tree so coding agents can search and read local files instead of calling the Outline API for every question.
+`outcrawl` mirrors Outline wiki documents into local SQLite and normalized
+Markdown so you can search, query, diff, and read your Outline memory without
+calling the Outline API for every question.
 
-The tool is read-only against Outline. SQLite is the canonical local archive; Markdown is the durable human/agent surface.
+It has one ingestion path:
 
-## Current scope
+- `api`: official Outline API sync for collections and documents
 
-- Outline API ingestion for collections and documents
+SQLite is the canonical archive. Markdown is the durable human/agent surface.
+Documents that disappear from a later API listing are marked missing instead of
+being deleted automatically.
+
+## Current Scope
+
 - local SQLite storage with FTS5
+- official Outline collection and document ingestion
 - incremental sync based on document `updatedAt`
 - SHA-256 content hashes for fetched Markdown
-- safe missing-document marking instead of automatic deletion
-- Markdown export organized by collection and parent document path
-- local full-text search
-- fallback to credentials already stored by the `ol` CLI
+- normalized Markdown export organized by collection and parent document paths
+- local full-text search over document title and body
+- archive status and authentication diagnostics
+- reuse of credentials already stored by the `ol` CLI
 
-## Quick start
+## Install
+
+From this checkout:
+
+```bash
+cd ~/src/outcrawl
+go build -o ~/.local/bin/outcrawl ./cmd/outcrawl
+```
+
+Make sure `~/.local/bin` is on your `PATH`.
+
+## Quick Start
+
+Use the selected `ol` account:
 
 ```bash
 outcrawl init
 outcrawl doctor
+outcrawl status
 outcrawl sync
 outcrawl search "launch plan"
+```
+
+Or use explicit Outline API credentials:
+
+```bash
+export OUTLINE_BASE_URL="https://outline.example.com"
+export OUTLINE_API_TOKEN="ol_api_token"
+outcrawl sync
 ```
 
 Default paths:
@@ -31,36 +61,30 @@ Default paths:
 - cache: `~/.outcrawl/cache`
 - Markdown archive: `~/.outcrawl/pages`
 
-## Authentication
-
-`outcrawl` first checks environment variables:
-
-```bash
-export OUTLINE_BASE_URL="https://outline.example.com"
-export OUTLINE_API_TOKEN="ol_api_token"
-```
-
-If no token is present in the environment, it tries to reuse the selected `ol` account via:
-
-```bash
-ol auth token view
-ol account current --json
-```
-
 ## Commands
 
-```bash
-outcrawl init                 # write starter config
-outcrawl doctor               # check paths, auth, and API access
-outcrawl status               # show local archive counts
-outcrawl sync                 # sync Outline into SQLite, then export Markdown
-outcrawl sync --no-export     # sync SQLite only
-outcrawl export-md            # render Markdown from SQLite
-outcrawl search "query"       # search local FTS index
-```
+- `init` writes a starter config
+- `doctor` checks config, auth, and Outline API access
+- `status` prints archive counts and last sync time
+- `sync` ingests Outline collections/documents and exports Markdown
+- `sync --no-export` updates SQLite without rendering Markdown
+- `export-md` renders normalized Markdown files from SQLite
+- `search` searches document title and body text through FTS5
 
-Most machine-facing commands support `--json`.
+`doctor --json`, `status --json`, `sync --json`, `export-md --json`, and
+`search --json` expose machine-readable payloads for agents and automation.
 
-## Safety model
+## Safety Model
 
-`outcrawl` never writes to Outline. Documents that disappear from a later sync are marked `missing` in SQLite rather than removed from the archive or filesystem. A future explicit `prune` command can handle deletion once the semantics are clear for permission changes, archived docs, and API visibility gaps.
+`outcrawl` is read-only against Outline. It stores raw API payloads alongside
+normalized rows so renderers can improve without recrawling.
+
+Documents missing from a later API listing are preserved and marked `missing`
+because permission changes, archival state, and API visibility gaps are not
+reliable deletion signals. Local Markdown files are not pruned automatically.
+
+Attachment blob mirroring is intentionally out of scope. Markdown keeps the
+links returned by Outline, but `outcrawl` does not download image or file bytes
+into the archive.
+
+Secrets are never exported into Markdown.
