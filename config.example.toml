@@ -1,0 +1,10 @@
+db_path = "~/.outcrawl/outcrawl.db"
+cache_dir = "~/.outcrawl/cache"
+markdown_dir = "~/.outcrawl/pages"
+
+[outline]
+# Optional when using the selected `ol` account. Required when using OUTLINE_API_TOKEN directly.
+base_url = ""
+base_url_env = "OUTLINE_BASE_URL"
+token_env = "OUTLINE_API_TOKEN"
+page_size = 100
