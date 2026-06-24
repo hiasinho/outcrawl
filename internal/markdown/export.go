@@ -24,9 +24,18 @@ func Export(ctx context.Context, st *store.Store, dir string) (ExportSummary, er
 	if err != nil {
 		return ExportSummary{}, err
 	}
-	docs, err := st.Documents(ctx, false)
+	allDocs, err := st.Documents(ctx, true)
 	if err != nil {
 		return ExportSummary{}, err
+	}
+	if err := removeMissingExports(allDocs, dir); err != nil {
+		return ExportSummary{}, err
+	}
+	docs := make([]store.Document, 0, len(allDocs))
+	for _, d := range allDocs {
+		if !d.Missing {
+			docs = append(docs, d)
+		}
 	}
 	byID := make(map[string]store.Document, len(docs))
 	for _, d := range docs {
@@ -54,6 +63,33 @@ func Export(ctx context.Context, st *store.Store, dir string) (ExportSummary, er
 		}
 	}
 	return summary, nil
+}
+
+func removeMissingExports(docs []store.Document, dir string) error {
+	for _, doc := range docs {
+		if !doc.Missing || strings.TrimSpace(doc.Path) == "" {
+			continue
+		}
+		abs, ok := exportPath(dir, doc.Path)
+		if !ok {
+			continue
+		}
+		if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func exportPath(dir, rel string) (string, bool) {
+	if filepath.IsAbs(rel) {
+		return "", false
+	}
+	clean := filepath.Clean(rel)
+	if clean == "." || clean == "" || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.Join(dir, clean), true
 }
 
 func documentPath(doc store.Document, docs map[string]store.Document, collections map[string]store.Collection) string {
