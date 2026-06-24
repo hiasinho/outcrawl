@@ -245,10 +245,10 @@ func (s *Store) ExistingDocument(ctx context.Context, id string) (DocumentMeta, 
 }
 
 func (s *Store) MarkMissingNotSeen(ctx context.Context, syncAt int64) error {
-	if _, err := s.exec(ctx, `update collections set missing=1 where last_seen_at < ?`, syncAt); err != nil {
+	if _, err := s.exec(ctx, `update collections set missing=1, synced_at=? where last_seen_at < ?`, syncAt, syncAt); err != nil {
 		return err
 	}
-	_, err := s.exec(ctx, `update documents set missing=1 where last_seen_at < ?`, syncAt)
+	_, err := s.exec(ctx, `update documents set missing=1, synced_at=? where last_seen_at < ?`, syncAt, syncAt)
 	return err
 }
 
