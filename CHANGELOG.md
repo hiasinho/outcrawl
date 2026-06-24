@@ -2,6 +2,17 @@
 
 All notable changes to outcrawl are documented in this file.
 
+## [0.0.4] - 2026-06-24
+
+### Fixed
+
+- Treat default search input as plain text by tokenizing punctuation-heavy queries before passing them to SQLite FTS. Closes #9.
+- Exclude missing documents from default search results so stale Markdown paths are not presented as current files. Closes #8.
+
+### Tests
+
+- Added regression coverage for punctuation-safe search queries and missing-document search filtering.
+
 ## [0.0.3] - 2026-06-24
 
 ### Maintenance
@@ -36,6 +47,7 @@ Initial outcrawl release.
 - Reuse credentials from environment variables or the selected `ol` account.
 - Preserve missing documents instead of deleting local archive data.
 
+[0.0.4]: https://github.com/hiasinho/outcrawl/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/hiasinho/outcrawl/compare/v0.0.1...v0.0.3
 [0.0.2]: https://github.com/hiasinho/outcrawl/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/hiasinho/outcrawl/releases/tag/v0.0.1

@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 
@@ -337,7 +339,15 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]SearchRe
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := s.query(ctx, `select id, title, path, snippet(document_fts, 2, '[', ']', ' ... ', 18) from document_fts where document_fts match ? limit ?`, query, limit)
+	ftsQuery := plainTextFTSQuery(query)
+	if ftsQuery == "" {
+		return nil, nil
+	}
+	rows, err := s.query(ctx, `select documents.id, documents.title, coalesce(documents.path, ''), snippet(document_fts, 2, '[', ']', ' ... ', 18)
+		from document_fts
+		join documents on documents.id = document_fts.id
+		where document_fts match ? and documents.missing=0
+		limit ?`, ftsQuery, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -351,6 +361,27 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]SearchRe
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func plainTextFTSQuery(query string) string {
+	var tokens []string
+	var b strings.Builder
+	flush := func() {
+		if b.Len() == 0 {
+			return
+		}
+		tokens = append(tokens, `"`+b.String()+`"`)
+		b.Reset()
+	}
+	for _, r := range query {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return strings.Join(tokens, " AND ")
 }
 
 func HashText(text string) string {
