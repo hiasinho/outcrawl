@@ -1,12 +1,15 @@
 package markdown
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -28,11 +31,10 @@ func Export(ctx context.Context, st *store.Store, dir string) (ExportSummary, er
 	if err != nil {
 		return ExportSummary{}, err
 	}
-	if err := removeMissingExports(allDocs, dir); err != nil {
-		return ExportSummary{}, err
-	}
 	docs := make([]store.Document, 0, len(allDocs))
+	knownIDs := make(map[string]bool, len(allDocs))
 	for _, d := range allDocs {
+		knownIDs[d.ID] = true
 		if !d.Missing {
 			docs = append(docs, d)
 		}
@@ -41,10 +43,25 @@ func Export(ctx context.Context, st *store.Store, dir string) (ExportSummary, er
 	for _, d := range docs {
 		byID[d.ID] = d
 	}
-	summary := ExportSummary{Documents: len(docs)}
 	sort.Slice(docs, func(i, j int) bool { return strings.ToLower(docs[i].Title) < strings.ToLower(docs[j].Title) })
+
+	exports := make([]documentExport, 0, len(docs))
+	canonicalPaths := make(map[string]bool, len(docs))
+	canonicalByID := make(map[string]string, len(docs))
 	for _, doc := range docs {
 		rel := documentPath(doc, byID, collections)
+		exports = append(exports, documentExport{Document: doc, Path: rel})
+		canonicalPaths[rel] = true
+		canonicalByID[doc.ID] = rel
+	}
+	if err := cleanupStaleExports(dir, allDocs, knownIDs, canonicalPaths, canonicalByID); err != nil {
+		return ExportSummary{}, err
+	}
+
+	summary := ExportSummary{Documents: len(exports)}
+	for _, export := range exports {
+		doc := export.Document
+		rel := export.Path
 		abs := filepath.Join(dir, rel)
 		body := render(doc)
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
@@ -65,20 +82,97 @@ func Export(ctx context.Context, st *store.Store, dir string) (ExportSummary, er
 	return summary, nil
 }
 
-func removeMissingExports(docs []store.Document, dir string) error {
+type documentExport struct {
+	Document store.Document
+	Path     string
+}
+
+func cleanupStaleExports(dir string, docs []store.Document, knownIDs map[string]bool, canonicalPaths map[string]bool, canonicalByID map[string]string) error {
 	for _, doc := range docs {
-		if !doc.Missing || strings.TrimSpace(doc.Path) == "" {
+		if strings.TrimSpace(doc.Path) == "" || canonicalPaths[doc.Path] {
 			continue
 		}
 		abs, ok := exportPath(dir, doc.Path)
 		if !ok {
 			continue
 		}
-		if err := os.Remove(abs); err != nil && !os.IsNotExist(err) {
+		if err := removeFileIfExists(abs); err != nil {
 			return err
 		}
 	}
+
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+
+	return filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".md" {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.Clean(rel)
+		if canonicalPaths[rel] {
+			return nil
+		}
+		id, ok, err := frontmatterID(path)
+		if err != nil || !ok {
+			return err
+		}
+		if canonical, ok := canonicalByID[id]; ok && canonical != rel {
+			return removeFileIfExists(path)
+		}
+		if knownIDs[id] {
+			return removeFileIfExists(path)
+		}
+		return nil
+	})
+}
+
+func removeFileIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
+}
+
+func frontmatterID(path string) (string, bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	if !scanner.Scan() {
+		return "", false, scanner.Err()
+	}
+	if strings.TrimSpace(scanner.Text()) != "---" {
+		return "", false, nil
+	}
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "---" {
+			return "", false, nil
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "id" {
+			continue
+		}
+		id := strings.TrimSpace(value)
+		if unquoted, err := strconv.Unquote(id); err == nil {
+			id = unquoted
+		}
+		return id, id != "", nil
+	}
+	return "", false, scanner.Err()
 }
 
 func exportPath(dir, rel string) (string, bool) {
